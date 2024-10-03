@@ -1,0 +1,22 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2835";
+
+    fragment@0 {
+        target = <&spi0>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            status = "okay";
+
+            bmp280: bmp280@0 {
+                compatible = "bosch,bmp280";
+                reg = <0>;
+                spi-max-frequency = <500000>;  // Adjust the frequency as needed
+            };
+        };
+    };
+};
+
