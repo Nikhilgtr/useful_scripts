@@ -1,0 +1,5 @@
+OPENOCD COMMAND
+===============
+
+./src/openocd -f tcl/interface/ftdi/ft232h-rpi4.cfg -f tcl/target/bcm2711.cfg
+gdb-multiarch linux/build/vmlinux
