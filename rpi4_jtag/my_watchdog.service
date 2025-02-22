@@ -1,0 +1,11 @@
+[Unit]
+Description=Load my_watchdog with delay
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'sleep 60 && modprobe my_watchdog'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
