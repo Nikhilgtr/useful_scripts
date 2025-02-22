@@ -10,12 +10,12 @@ USER="nik"
 function mod_install() {
     local MODULES_TAR="modules.tar.gz"
     local COMPILED_MODULES_DIR="$BUILD_DIR/mod_ins"
-
-    mkdir $BUILD_DIR/mod_ins
     
-    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=$COMPILED_MODULES_DIR modules_install 
-#make O=$BUILD_DIR -j4 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=$COMPILED_MODULES_DIR modules_install 
-    tar -czf "$MODULES_TAR" -C "$COMPILED_MODULES_DIR" .
+    rm -rf $COMPILED_MODULES_DIR
+    mkdir $COMPILED_MODULES_DIR
+        
+    make O=$BUILD_DIR -j4 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=`pwd`/$COMPILED_MODULES_DIR modules_install 
+    tar -cvzf "$MODULES_TAR" -C "$COMPILED_MODULES_DIR" "."
     echo "Transferring files to the target..."
     scp "$MODULES_TAR" "$USER@$IP:/tmp/"
 
@@ -23,13 +23,17 @@ function mod_install() {
     ssh "$USER@$IP" <<EOF
     set -e
     echo "Extracting modules..."
-    sudo tar -xzf /tmp/$MODULES_TAR -C /
+    mkdir /tmp/mod
+    tar -xzf /tmp/$MODULES_TAR -C /tmp/mod/
+    
+    sudo mv /tmp/mod/lib/modules/* /lib/modules
 
     echo "Updating modules..."
     sudo depmod -a
 
     echo "Cleaning up..."
     rm /tmp/$MODULES_TAR
+    rm -rf /tmp/mod/
 
     echo "Modules installed successfully."
 EOF
@@ -42,7 +46,7 @@ b)
     make O=$BUILD_DIR -j4 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image.gz modules dtbs
 ;;
 menu)
-    make O=$BUILD_DIR ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- menuconfig
+    make -j4 O=$BUILD_DIR ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- menuconfig
 ;;
 def)
     make O=$BUILD_DIR ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- bcm2711_defconfig
@@ -60,14 +64,23 @@ mod_c)
 ;;
 copy)
     mod_install
-    ssh $USER@$IP "cp /boot/firmware/$KERNEL.img /boot/firmware/$KERNEL-backup.img"
-    scp -r $USER@$IP $BUILD_DIR/arch/arm64/boot/Image.gz /boot/firmware/$KERNEL.img
-    scp -r $USER@$IP $BUILD_DIR/arch/arm64/boot/dts/broadcom/*.dtb /boot/firmware/
-    scp -r $USER@$IP $BUILD_DIR/arch/arm64/boot/dts/overlays/*.dtb* /boot/firmware/overlays/
-
-    # Reboot the target
+    ssh $USER@$IP "sudo cp /boot/firmware/$KERNEL.img /boot/firmware/$KERNEL-backup.img"
+    scp $BUILD_DIR/arch/arm64/boot/Image $USER@$IP:/tmp/$KERNEL.img
+    ssh $USER@$IP "sudo cp /tmp/$KERNEL.img /boot/firmware/$KERNEL.img"
+    
+    #Reboot the target
     echo "Rebooting the target to apply changes..."
     ssh "$USER@$IP" "sudo reboot"
+    
+    exit
+    ssh $USER@$IP "sudo mkdir /tmp/dtb"
+    scp -r  $BUILD_DIR/arch/arm64/boot/dts/broadcom/*.dtb $USER@$IP:/tmp/dtb
+    ssh $USER@$IP "sudo mv /tmp/dtb/* /boot/firmware && rm -rf /tmp/dtb"
+    
+    ssh $USER@$IP "sudo mkdir /tmp/overlay"
+    scp -r  $BUILD_DIR/arch/arm64/boot/dts/overlays/*.dtb* $USER@$IP:/tmp/overlay
+    ssh $USER@$IP "sudo mv /tmp/overlay/* /boot/firmware/overlays && rm -rf /tmp/overlays"
+
 ;;
 
 *)

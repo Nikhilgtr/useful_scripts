@@ -3,3 +3,20 @@ OPENOCD COMMAND
 
 ./src/openocd -f tcl/interface/ftdi/ft232h-rpi4.cfg -f tcl/target/bcm2711.cfg
 gdb-multiarch linux/build/vmlinux
+
+FTDI C1 PINCTRL, USE this command in telnet openocd
+===================================================
+
+add pull down resistor in rpi4 pin
+
+we have some change in ft232h tcl openocd config
+
+ftdi set_signal ACBUS1 0   // to set gnd
+ftdi set_signal ACBUS1 1   // to set high 3.3
+
+after reset change the state from 1 to 0 of c1 buss else rpi4 will continusoly reboot
+
+copying config of ft232h and rpi4 target bcm2711
+
+===================================================
+C1 pin is connected to GPIO21, which is mapped to pin 533, check in cat /sys/kernel/debug/gpio
