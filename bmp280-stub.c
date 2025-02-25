@@ -69,6 +69,17 @@ static int i2c_stub_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num
 
     return num;
 }
+
+static u32 i2c_stub_func(struct i2c_adapter *adap)
+{
+    return I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL;
+}
+
+static const struct i2c_algorithm i2c_stub_algo = {
+    .master_xfer = i2c_stub_xfer,
+    .functionality = i2c_stub_func,
+};
+
 static struct i2c_adapter i2c_stub_adapter = {
     .owner = THIS_MODULE,
     .class = I2C_CLASS_HWMON,
@@ -99,6 +110,6 @@ static void __exit i2c_stub_exit(void)
 module_init(i2c_stub_init);
 module_exit(i2c_stub_exit);
 
-MODULE_AUTHOR("Nikhil Gautam");
+MODULE_AUTHOR("Your Name");
 MODULE_DESCRIPTION("I2C BMP280 Stub Driver");
 MODULE_LICENSE("GPL");
