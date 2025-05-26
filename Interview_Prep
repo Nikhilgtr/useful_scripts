@@ -1,0 +1,18 @@
+26-05-25: Trying to understand interuppt and spin locks in Linux (Basics) using Qemu
+
++--------------------------+------------------+------------------------+---------------------------+
+|         Context          | Interrupts State |   Use spin_lock() or    |        Reason/Goal         |
+|                          |                  |   spin_lock_irqsave()?  |                           |
++--------------------------+------------------+------------------------+---------------------------+
+| Interrupt Handler (ISR)  |      Disabled    |     spin_lock()         | Interrupts already off;    |
+|                          |                  |                        | prevent concurrent access  |
++--------------------------+------------------+------------------------+---------------------------+
+| Syscall / Kernel Thread  |      Enabled     |  spin_lock_irqsave()    | Disable interrupts locally |
+|                          |                  |                        | to avoid deadlock if ISR   |
+|                          |                  |                        | takes same lock on same CPU|
++--------------------------+------------------+------------------------+---------------------------+
+| Softirq / Tasklet        |      Enabled     | spin_lock_bh() or       | Disable softirqs locally   |
+|                          |                  | spin_lock_irqsave()     | to protect against bottom- |
+|                          |                  |                        | half concurrency          |
++--------------------------+------------------+------------------------+---------------------------+
+
