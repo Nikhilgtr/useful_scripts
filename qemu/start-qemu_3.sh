@@ -34,6 +34,16 @@ else
     GDB_ARGS=''
 fi
 
+#Enable this driver in kernel
+#Device Drivers --->
+#  Network device support --->
+#    Ethernet driver support --->
+#      [*] Realtek devices --->
+#          <*> RealTek RTL-8139 C+ PCI Fast Ethernet Adapter support     # driver: 8139cp
+#          <*> RealTek RTL-8129/8130/8139 (not C+) PCI Fast Ethernet Adapter support   # driver: 8139too
+
+#ssh -p 2222 root@localhost
+
 exec qemu-system-arm \
     -M versatilepb \
     -kernel zImage \
