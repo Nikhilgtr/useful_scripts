@@ -1,8 +1,8 @@
 #!/bin/sh
 
 # Adjust these if your paths change
-KERNEL_DIR="/home/nik/ws/buildroot/buildroot-2025.02.3/out_arm/build/linux-6.12.27"
-GDB="/home/nik/ws/buildroot/buildroot-2025.02.3/out_arm/host/bin/arm-buildroot-linux-gnueabi-gdb"
+KERNEL_DIR="/home/nik/ws/buildroot/buildroot-2024.02.6/64_bit/build/linux-6.1.44"
+GDB="/home/nik/ws/buildroot/buildroot-2024.02.6/64_bit/host/bin/aarch64-buildroot-linux-gnu-gdb"
 VMLINUX="${KERNEL_DIR}/vmlinux"
 GDB_SCRIPT="${KERNEL_DIR}/vmlinux-gdb.py"
 
@@ -19,4 +19,3 @@ fi
 exec ${GDB} "${VMLINUX}" \
     -ex "source ${GDB_SCRIPT}" \
     -ex "target remote :1234"
-

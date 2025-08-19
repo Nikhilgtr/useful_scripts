@@ -1,0 +1,6 @@
+scp -P 2222 bmp280-emul.ko root@localhost:/
+
+echo bmp280 0x76 > /sys/bus/i2c/devices/i2c-0/new_device
+
+make ARCH=arm64 CROSS_COMPILE=/home/nik/ws/buildroot/buildroot-2024.02.6/64_bit/host/bin/aarch64-buildroot-linux-gnu-
+ssh -p 2222 root@127.0.0.1
