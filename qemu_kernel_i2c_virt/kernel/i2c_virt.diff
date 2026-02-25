@@ -1,0 +1,159 @@
+diff --git a/drivers/i2c/busses/Kconfig b/drivers/i2c/busses/Kconfig
+index e50f9603d..cedbe44cd 100644
+--- a/drivers/i2c/busses/Kconfig
++++ b/drivers/i2c/busses/Kconfig
+@@ -28,6 +28,11 @@ config I2C_ALI1535
+ 	  This driver can also be built as a module.  If so, the module
+ 	  will be called i2c-ali1535.
+ 
++config I2C_VIRT
++	tristate "I2C VIRT"
++	help
++	  This driver will use qemu i2c virt as a bus
++
+ config I2C_ALI1563
+ 	tristate "ALI 1563"
+ 	depends on PCI
+diff --git a/drivers/i2c/busses/Makefile b/drivers/i2c/busses/Makefile
+index e73cdb1d2..8a8a276a3 100644
+--- a/drivers/i2c/busses/Makefile
++++ b/drivers/i2c/busses/Makefile
+@@ -155,5 +155,6 @@ obj-$(CONFIG_I2C_XGENE_SLIMPRO) += i2c-xgene-slimpro.o
+ obj-$(CONFIG_SCx200_ACB)	+= scx200_acb.o
+ obj-$(CONFIG_I2C_FSI)		+= i2c-fsi.o
+ obj-$(CONFIG_I2C_VIRTIO)	+= i2c-virtio.o
++obj-$(CONFIG_I2C_VIRT)	    += i2c-virt.o
+ 
+ ccflags-$(CONFIG_I2C_DEBUG_BUS) := -DDEBUG
+diff --git a/drivers/i2c/busses/i2c-virt.c b/drivers/i2c/busses/i2c-virt.c
+new file mode 100644
+index 000000000..849c7117b
+--- /dev/null
++++ b/drivers/i2c/busses/i2c-virt.c
+@@ -0,0 +1,126 @@
++// drivers/i2c/busses/i2c-virt.c
++
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/of.h>
++#include <linux/i2c.h>
++#include <linux/io.h>
++#include <linux/interrupt.h>
++
++#define REG_CTRL     0x00
++#define REG_ADDR     0x04
++#define REG_DATA     0x08
++#define REG_STATUS   0x0C
++#define REG_IRQ_EN   0x10
++#define REG_IRQ_STAT 0x14
++
++#define STATUS_DONE (1<<0)
++#define STATUS_ACK  (1<<0)
++
++struct virt_i2c {
++    void __iomem *base;
++    int irq;
++    struct i2c_adapter adap;
++};
++
++static int virt_i2c_xfer(struct i2c_adapter *adap,
++                         struct i2c_msg msgs[], int num)
++{
++    struct virt_i2c *vi = i2c_get_adapdata(adap);
++    int i, j;
++
++    for (i = 0; i < num; i++) {
++
++        writel(msgs[i].addr, vi->base + REG_ADDR);
++
++        for (j = 0; j < msgs[i].len; j++) {
++
++            if (msgs[i].flags & I2C_M_RD) {
++
++                writel(0x3, vi->base + REG_CTRL);  /* START + READ */
++
++                while (!(readl(vi->base + REG_STATUS) & STATUS_DONE))
++                    cpu_relax();
++
++                /* If transfer failed â†’ return error */
++                if (!(readl(vi->base + REG_STATUS) & STATUS_ACK))
++                    return -EIO;
++
++                msgs[i].buf[j] = readl(vi->base + REG_DATA);
++
++            } else {
++
++                writel(msgs[i].buf[j], vi->base + REG_DATA);
++                writel(0x1, vi->base + REG_CTRL);  /* START + WRITE */
++
++                while (!(readl(vi->base + REG_STATUS) & STATUS_DONE))
++                    cpu_relax();
++
++                if (!(readl(vi->base + REG_STATUS) & STATUS_ACK))
++                    return -EIO;
++            }
++
++            writel(1, vi->base + REG_IRQ_STAT);
++        }
++    }
++
++    return num;
++}
++
++
++static u32 virt_i2c_func(struct i2c_adapter *adap)
++{
++    return I2C_FUNC_I2C |
++           I2C_FUNC_SMBUS_BYTE |
++           I2C_FUNC_SMBUS_BYTE_DATA |
++           I2C_FUNC_SMBUS_READ_BYTE |
++           I2C_FUNC_SMBUS_WRITE_BYTE;
++}
++
++static const struct i2c_algorithm virt_i2c_algo = {
++    .master_xfer = virt_i2c_xfer,
++    .functionality = virt_i2c_func,
++};
++
++static int virt_i2c_probe(struct platform_device *pdev)
++{
++    struct virt_i2c *vi;
++    struct resource *res;
++
++    vi = devm_kzalloc(&pdev->dev, sizeof(*vi), GFP_KERNEL);
++    if (!vi)
++        return -ENOMEM;
++
++    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++    vi->base = devm_ioremap_resource(&pdev->dev, res);
++    if (IS_ERR(vi->base))
++        return PTR_ERR(vi->base);
++
++    vi->adap.owner = THIS_MODULE;
++    vi->adap.algo = &virt_i2c_algo;
++    vi->adap.dev.parent = &pdev->dev;
++    vi->adap.nr = -1;
++    strlcpy(vi->adap.name, "virt-i2c", sizeof(vi->adap.name));
++
++    i2c_set_adapdata(&vi->adap, vi);
++
++    return i2c_add_adapter(&vi->adap);
++}
++
++static const struct of_device_id virt_i2c_dt_ids[] = {
++    { .compatible = "virt,i2c" },
++    { }
++};
++MODULE_DEVICE_TABLE(of, virt_i2c_dt_ids);
++
++static struct platform_driver virt_i2c_driver = {
++    .probe = virt_i2c_probe,
++    .driver = {
++        .name = "virt-i2c",
++        .of_match_table = virt_i2c_dt_ids,
++    },
++};
++
++module_platform_driver(virt_i2c_driver);
++
++MODULE_LICENSE("GPL");

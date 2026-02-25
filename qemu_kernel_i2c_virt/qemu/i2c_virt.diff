@@ -1,0 +1,267 @@
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 1a381e9a2b..ab9ed3f59d 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -85,6 +85,7 @@
+ #include "hw/virtio/virtio-iommu.h"
+ #include "hw/char/pl011.h"
+ #include "qemu/guest-random.h"
++#include "hw/i2c/i2c.h"
+ 
+ static GlobalProperty arm_virt_compat[] = {
+     { TYPE_VIRTIO_IOMMU_PCI, "aw-bits", "48" },
+@@ -316,6 +317,60 @@ static void create_fdt(VirtMachineState *vms)
+                                 "clk24mhz");
+     qemu_fdt_setprop_cell(fdt, "/apb-pclk", "phandle", vms->clock_phandle);
+ 
++#define VIRT_I2C_OFFSET  0x00010000
++#define VIRT_I2C_SIZE    0x1000
++#define VIRT_I2C_IRQ     48
++
++	hwaddr base = vms->memmap[VIRT_PLATFORM_BUS].base + VIRT_I2C_OFFSET;
++
++	/* Create I2C controller node */
++	qemu_fdt_add_subnode(fdt, "/i2c@0c010000");
++
++	qemu_fdt_setprop_string(fdt,
++			"/i2c@0c010000",
++			"compatible",
++			"virt,i2c");
++
++	qemu_fdt_setprop_sized_cells(fdt,
++			"/i2c@0c010000",
++			"reg",
++			2, base,
++			2, VIRT_I2C_SIZE);
++
++	qemu_fdt_setprop_cells(fdt,
++			"/i2c@0c010000",
++			"interrupts",
++			GIC_FDT_IRQ_TYPE_SPI,
++			VIRT_I2C_IRQ,
++			GIC_FDT_IRQ_FLAGS_LEVEL_HI);
++
++	qemu_fdt_setprop_cell(fdt,
++			"/i2c@0c010000",
++			"#address-cells", 1);
++
++	qemu_fdt_setprop_cell(fdt,
++			"/i2c@0c010000",
++			"#size-cells", 0);
++
++	qemu_fdt_setprop_string(fdt,
++			"/i2c@0c010000",
++			"status",
++			"okay");
++
++	/* TMP105 child node */
++	qemu_fdt_add_subnode(fdt,
++			"/i2c@0c010000/tmp105@48");
++
++	qemu_fdt_setprop_string(fdt,
++			"/i2c@0c010000/tmp105@48",
++			"compatible",
++			"ti,tmp105");
++
++	qemu_fdt_setprop_cell(fdt,
++			"/i2c@0c010000/tmp105@48",
++			"reg",
++			0x48);
++
+     if (nb_numa_nodes > 0 && ms->numa_state->have_numa_distance) {
+         int size = nb_numa_nodes * nb_numa_nodes * 3 * sizeof(uint32_t);
+         uint32_t *matrix = g_malloc0(size);
+@@ -2348,6 +2403,33 @@ static void machvirt_init(MachineState *machine)
+     virt_flash_fdt(vms, sysmem, secure_sysmem ?: sysmem);
+ 
+     create_gic(vms, sysmem);
++#define VIRT_I2C_OFFSET  0x00010000
++#define VIRT_I2C_SIZE    0x1000
++#define VIRT_I2C_IRQ     48
++
++	hwaddr base = vms->memmap[VIRT_PLATFORM_BUS].base + VIRT_I2C_OFFSET;
++
++	DeviceState *i2c = qdev_new("virt-i2c");
++	SysBusDevice *s = SYS_BUS_DEVICE(i2c);
++
++	sysbus_realize_and_unref(s, &error_fatal);
++
++	/* Map into system memory */
++	memory_region_add_subregion(get_system_memory(),
++			base,
++			sysbus_mmio_get_region(s, 0));
++
++	/* Connect IRQ to GIC */
++	sysbus_connect_irq(s, 0,
++			qdev_get_gpio_in(vms->gic, VIRT_I2C_IRQ));
++
++	/* Attach TMP105 */
++	I2CBus *bus = (I2CBus *)qdev_get_child_bus(i2c, "i2c");
++
++	DeviceState *tmp = qdev_new("tmp105");
++	qdev_prop_set_uint8(tmp, "address", 0x48);
++
++	i2c_slave_realize_and_unref(I2C_SLAVE(tmp), bus, &error_fatal);
+ 
+     virt_cpu_post_init(vms, sysmem);
+ 
+diff --git a/hw/misc/i2c_virt.c b/hw/misc/i2c_virt.c
+new file mode 100644
+index 0000000000..118c3ea67d
+--- /dev/null
++++ b/hw/misc/i2c_virt.c
+@@ -0,0 +1,145 @@
++#include "qemu/osdep.h"
++#include "hw/sysbus.h"
++#include "hw/i2c/i2c.h"
++#include "hw/irq.h"
++#include "qemu/module.h"
++
++#define TYPE_VIRT_I2C "virt-i2c"
++OBJECT_DECLARE_SIMPLE_TYPE(VirtI2CState, VIRT_I2C)
++
++typedef struct VirtI2CState {
++    SysBusDevice parent_obj;
++    MemoryRegion mmio;
++    I2CBus *bus;
++    qemu_irq irq;
++
++    uint32_t ctrl;
++    uint32_t addr;
++    uint32_t data;
++    uint32_t status;
++    uint32_t irq_en;
++    uint32_t irq_stat;
++} VirtI2CState;
++
++#define REG_CTRL     0x00
++#define REG_ADDR     0x04
++#define REG_DATA     0x08
++#define REG_STATUS   0x0C
++#define REG_IRQ_EN   0x10
++#define REG_IRQ_STAT 0x14
++
++#define STATUS_DONE (1<<0)
++#define STATUS_ACK  (1<<0)
++static void virt_i2c_raise_irq(VirtI2CState *s)
++{
++    if (s->irq_en & 1) {
++        s->irq_stat = 1;
++        qemu_set_irq(s->irq, 1);
++    }
++}
++
++static uint64_t virt_i2c_read(void *opaque, hwaddr offset, unsigned size)
++{
++    VirtI2CState *s = opaque;
++
++    switch (offset) {
++    case REG_STATUS:   return s->status;
++    case REG_DATA:     return s->data;
++    case REG_IRQ_STAT: return s->irq_stat;
++    default:           return 0;
++    }
++}
++
++static void virt_i2c_write(void *opaque, hwaddr offset,
++                           uint64_t value, unsigned size)
++{
++    VirtI2CState *s = opaque;
++
++    switch (offset) {
++
++    case REG_ADDR:
++        s->addr = value & 0x7f;
++        break;
++
++    case REG_DATA:
++        s->data = value & 0xff;
++        break;
++
++	case REG_CTRL:
++		s->ctrl = value;
++		s->status = 0;
++
++		if (value & 1) { /* START */
++
++			bool is_read = value & 2;
++
++			if (i2c_start_transfer(s->bus, s->addr, is_read) == 0) {
++
++				if (is_read) {
++					s->data = i2c_recv(s->bus);
++				} else {
++					i2c_send(s->bus, s->data);
++				}
++
++				i2c_end_transfer(s->bus);
++
++				s->status = STATUS_DONE|STATUS_ACK;   /* SUCCESS */
++			} else {
++				s->status = STATUS_DONE;   /* NO ACK */
++			}
++
++			virt_i2c_raise_irq(s);
++		}
++		break;
++
++    case REG_IRQ_EN:
++        s->irq_en = value;
++        break;
++
++    case REG_IRQ_STAT:
++        s->irq_stat = 0;
++        qemu_set_irq(s->irq, 0);
++        break;
++    }
++}
++
++static const MemoryRegionOps virt_i2c_ops = {
++    .read = virt_i2c_read,
++    .write = virt_i2c_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++};
++
++static void virt_i2c_init(Object *obj)
++{
++    VirtI2CState *s = VIRT_I2C(obj);
++
++    memory_region_init_io(&s->mmio, obj,
++                          &virt_i2c_ops,
++                          s, "virt-i2c", 0x1000);
++
++    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
++    sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
++
++    s->bus = i2c_init_bus(DEVICE(obj), "i2c");
++}
++
++static void virt_i2c_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    dc->desc = "Minimal Virt I2C Master";
++}
++
++static const TypeInfo virt_i2c_info = {
++    .name          = TYPE_VIRT_I2C,
++    .parent        = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(VirtI2CState),
++    .instance_init = virt_i2c_init,
++    .class_init    = virt_i2c_class_init,
++};
++
++static void virt_i2c_register_types(void)
++{
++    type_register_static(&virt_i2c_info);
++}
++
++type_init(virt_i2c_register_types);
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index d02d96e403..894ea3ec98 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -152,3 +152,4 @@ system_ss.add(when: 'CONFIG_SBSA_REF', if_true: files('sbsa_ec.c'))
+ 
+ # HPPA devices
+ system_ss.add(when: 'CONFIG_LASI', if_true: files('lasi.c'))
++system_ss.add(files('i2c_virt.c'))

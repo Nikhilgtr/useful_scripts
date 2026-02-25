@@ -4,3 +4,14 @@ echo bmp280 0x76 > /sys/bus/i2c/devices/i2c-0/new_device
 
 make ARCH=arm64 CROSS_COMPILE=/home/nik/ws/buildroot/buildroot-2024.02.6/64_bit/host/bin/aarch64-buildroot-linux-gnu-
 ssh -p 2222 root@127.0.0.1
+
+
+cat /sys/bus/iio/devices/iio:device0/in_temp_input
+-50830
+
+echo 0x76 > /sys/bus/i2c/devices/i2c-0/delete_device
+echo bmp280 0x76 > /sys/bus/i2c/devices/i2c-0/new_device
+
+
+
+

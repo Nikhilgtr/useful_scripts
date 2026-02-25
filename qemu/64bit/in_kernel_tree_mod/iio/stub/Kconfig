@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+#
+# Light sensors
+#
+# When adding new entries keep the list in alphabetical order
+
+menu "stub drivers"
+
+config BMP280_STUB 
+	tristate "BMP280 Stub driver for I2C BUS"
+	help
+	  BMP280 I2c Stub Bus with chip address register.
+
+endmenu

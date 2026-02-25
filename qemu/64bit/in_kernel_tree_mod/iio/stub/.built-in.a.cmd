@@ -1,0 +1,1 @@
+cmd_drivers/iio/stub/built-in.a := rm -f drivers/iio/stub/built-in.a;  printf "drivers/iio/stub/%s " bmp280-emul.o | xargs /home/nik/ws/buildroot/buildroot-2024.02.6/64_bit/host/bin/aarch64-buildroot-linux-gnu-ar cDPrST drivers/iio/stub/built-in.a
